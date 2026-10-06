@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Example survey</name>
+    <Placemark id="site-1">
+      <name>Survey point</name>
+      <ExtendedData><Data name="category"><value>reference</value></Data></ExtendedData>
+      <Point><coordinates>78.4867,17.3850,0</coordinates></Point>
+    </Placemark>
+    <Placemark id="route-1">
+      <name>Survey line</name>
+      <LineString><coordinates>78.4867,17.3850,0 78.4877,17.3850,0</coordinates></LineString>
+    </Placemark>
+    <Placemark id="parcel-1">
+      <name>Survey parcel</name>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        78.4867,17.3850,0 78.4877,17.3850,0 78.4877,17.3860,0 78.4867,17.3860,0 78.4867,17.3850,0
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+  </Document>
+</kml>

@@ -1,0 +1,23 @@
+[project]
+name = "geospatial-file-measurement-api"
+version = "1.0.0"
+description = "FastAPI REST service for KML and Shapefile measurements"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1", "uvicorn>=0.30,<1", "python-multipart>=0.0.20,<1",
+  "shapely>=2.0,<3", "pyproj>=3.6,<4", "pyshp>=2.3,<4", "defusedxml>=0.7,<1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "httpx>=0.27,<1", "ruff>=0.9,<1"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

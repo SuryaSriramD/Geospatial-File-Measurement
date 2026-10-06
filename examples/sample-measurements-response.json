@@ -1,0 +1,104 @@
+{
+  "file_id": "29a7c7ea-eb88-45ab-b848-19f05bae6383",
+  "total": 3,
+  "limit": 100,
+  "offset": 0,
+  "items": [
+    {
+      "feature_id": "site-1",
+      "index": 0,
+      "geometry_type": "Point",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          78.4867,
+          17.385
+        ]
+      },
+      "crs": "EPSG:4326",
+      "properties": {
+        "name": "Survey point",
+        "category": "reference"
+      },
+      "measurement": {
+        "status": "NOT_APPLICABLE",
+        "area_m2": null,
+        "length_m": null,
+        "crs": null,
+        "reason": "Point geometries have no area or line length."
+      }
+    },
+    {
+      "feature_id": "route-1",
+      "index": 1,
+      "geometry_type": "LineString",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            78.4867,
+            17.385
+          ],
+          [
+            78.4877,
+            17.385
+          ]
+        ]
+      },
+      "crs": "EPSG:4326",
+      "properties": {
+        "name": "Survey line"
+      },
+      "measurement": {
+        "status": "CALCULATED",
+        "area_m2": null,
+        "length_m": 106.31718199082025,
+        "crs": "EPSG:32644",
+        "reason": null
+      }
+    },
+    {
+      "feature_id": "parcel-1",
+      "index": 2,
+      "geometry_type": "Polygon",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              78.4867,
+              17.385
+            ],
+            [
+              78.4877,
+              17.385
+            ],
+            [
+              78.4877,
+              17.386
+            ],
+            [
+              78.4867,
+              17.386
+            ],
+            [
+              78.4867,
+              17.385
+            ]
+          ]
+        ]
+      },
+      "crs": "EPSG:4326",
+      "properties": {
+        "name": "Survey parcel"
+      },
+      "measurement": {
+        "status": "CALCULATED",
+        "area_m2": 11772.125834317098,
+        "length_m": null,
+        "crs": "EPSG:32644",
+        "reason": null
+      }
+    }
+  ]
+}

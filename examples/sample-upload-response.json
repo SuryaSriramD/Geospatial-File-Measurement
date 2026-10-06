@@ -1,0 +1,15 @@
+{
+  "id": "29a7c7ea-eb88-45ab-b848-19f05bae6383",
+  "filename": "sample.kml",
+  "feature_count": 3,
+  "crs": "EPSG:4326",
+  "geometry_crs": "EPSG:4326",
+  "status": "COMPLETED",
+  "created_at": "2026-10-06T17:04:38.667854Z",
+  "measurement_summary": {
+    "calculated": 2,
+    "not_applicable": 1,
+    "unsupported": 0,
+    "invalid": 0
+  }
+}
