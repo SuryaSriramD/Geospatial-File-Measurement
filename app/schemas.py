@@ -50,3 +50,29 @@ class MeasurementPage(BaseModel):
     limit: int
     offset: int
     items: list[FeatureResult]
+
+
+class ProcessingStep(BaseModel):
+    key: Literal["validate", "parse", "measure", "save"]
+    label: str
+    status: Literal["PENDING", "RUNNING", "COMPLETED", "FAILED"] = "PENDING"
+    duration_ms: float | None = None
+    detail: str | None = None
+
+
+class JobError(BaseModel):
+    code: str
+    message: str
+
+
+class JobStatus(BaseModel):
+    id: UUID
+    status: Literal["QUEUED", "PROCESSING", "COMPLETED", "FAILED"] = "QUEUED"
+    filename: str
+    created_at: datetime
+    updated_at: datetime
+    processed: int = 0
+    total: int | None = None
+    steps: list[ProcessingStep]
+    file_id: UUID | None = None
+    error: JobError | None = None

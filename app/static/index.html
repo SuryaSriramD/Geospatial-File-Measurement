@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="theme-color" content="#f5f5ef">
+    <title>GeoMeasure · File measurement workspace</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/assets/app.css">
+    <script src="/assets/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#workspace">Skip to workspace</a>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="GeoMeasure home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>GeoMeasure<span class="brand-dot">.</span></a>
+      <div class="header-right"><span class="local-label"><span></span>FILE MEASUREMENT</span><a class="docs-link" href="/docs" target="_blank" rel="noopener">API docs <span aria-hidden="true">↗</span></a></div>
+    </header>
+
+    <main id="workspace">
+      <section class="intro" aria-labelledby="page-title">
+        <div><p class="eyebrow">THE GEOSPATIAL WORKSPACE</p><h1 id="page-title">From file to<br class="mobile-break"> <span>measured features.</span></h1><p class="intro-copy">Upload your spatial data, follow its processing, and explore every result.<br class="wide-break"> Area and length, with the coordinate systems behind the numbers.</p></div>
+        <div class="intro-note"><span class="note-number">01—04</span><p>One file.<br>Every step, visible.</p></div>
+      </section>
+
+      <div id="error-banner" class="error-banner" role="alert" hidden><div><strong id="error-title">Something needs attention</strong><p id="error-message"></p></div><button id="retry-button" class="button button-small button-outline" type="button" hidden>Retry connection</button><button id="dismiss-error" class="icon-button" type="button" aria-label="Dismiss error">×</button></div>
+
+      <section class="work-grid" aria-label="Upload and processing">
+        <div class="panel upload-panel">
+          <div class="panel-heading"><h2><span class="section-index">01</span> Your file</h2><span class="pill neutral">KML / SHAPEFILE</span></div>
+          <input id="file-input" class="visually-hidden" type="file" accept=".kml,.zip" aria-label="Choose a KML or zipped Shapefile">
+          <div id="drop-zone" class="drop-zone">
+            <div class="file-symbol" aria-hidden="true"><span>↥</span></div>
+            <h3 id="drop-title">Drop a geospatial file here</h3>
+            <p id="drop-caption">or choose one from your computer</p>
+            <label for="file-input" id="browse-label" class="button button-outline browse-label">Browse files</label>
+            <p id="file-limit" class="file-limit">.kml or .zip containing a Shapefile</p>
+          </div>
+          <div id="selected-file" class="selected-file" hidden><div class="selected-icon" aria-hidden="true">▤</div><div class="selected-file-copy"><strong id="selected-name"></strong><span id="selected-size"></span></div><button id="clear-file" class="icon-button" type="button" aria-label="Remove selected file">×</button></div>
+          <p class="format-note">Shapefile ZIPs need matching <code>.shp</code>, <code>.shx</code>, <code>.dbf</code>, and <code>.prj</code> files.</p>
+          <div class="upload-actions"><button id="process-button" type="button" class="button button-primary" disabled>Process file <span aria-hidden="true">→</span></button><button id="sample-button" type="button" class="button button-text">Try sample <span aria-hidden="true">↗</span></button></div>
+          <p id="upload-status" class="upload-status" role="status" aria-live="polite">Choose a file to get started.</p>
+        </div>
+
+        <div class="panel pipeline-panel">
+          <div class="panel-heading"><h2><span class="section-index">02</span> Processing pipeline</h2><span id="pipeline-badge" class="pill neutral">READY</span></div>
+          <p class="panel-description" id="pipeline-description">Four steps from source data to results.</p>
+          <ol class="pipeline" id="pipeline">
+            <li data-step="validate"><span class="step-marker" aria-hidden="true">1</span><div class="step-body"><div class="step-top"><h3>Validate file</h3><span class="step-time"></span></div><p class="step-detail">Check file format, size, and contents.</p><span class="step-status visually-hidden">Pending</span></div></li>
+            <li data-step="parse"><span class="step-marker" aria-hidden="true">2</span><div class="step-body"><div class="step-top"><h3>Read features</h3><span class="step-time"></span></div><p class="step-detail">Extract geometry, properties, and source CRS.</p><span class="step-status visually-hidden">Pending</span></div></li>
+            <li data-step="measure"><span class="step-marker" aria-hidden="true">3</span><div class="step-body"><div class="step-top"><h3>Project &amp; measure</h3><span class="step-time"></span></div><p class="step-detail">Use a local projection for area and length.</p><span class="step-status visually-hidden">Pending</span></div></li>
+            <li data-step="save"><span class="step-marker" aria-hidden="true">4</span><div class="step-body"><div class="step-top"><h3>Save results</h3><span class="step-time"></span></div><p class="step-detail">Store the file and feature measurements.</p><span class="step-status visually-hidden">Pending</span></div></li>
+          </ol>
+          <div class="pipeline-footer"><span id="pipeline-message" role="status" aria-live="polite">Waiting for your file</span><span class="pipeline-caption">STATUS FROM THE API</span></div>
+        </div>
+      </section>
+
+      <section id="empty-results" class="empty-results" aria-label="Results placeholder"><div class="empty-symbol" aria-hidden="true"><span></span><span></span><span></span></div><div><h2>Your results will appear here</h2><p>Feature measurements, geometry, and original properties — together in one place.</p></div><button id="restore-button" class="button button-outline button-small" type="button" hidden>Open last result <span aria-hidden="true">↗</span></button></section>
+
+      <section id="results" class="results" aria-labelledby="results-title" hidden>
+        <div class="results-heading"><div><p class="eyebrow">MEASUREMENT RESULTS</p><h2 id="results-title" tabindex="-1"></h2><p id="result-context" class="result-context"></p></div><a id="export-button" class="button button-outline" download>Download JSON <span aria-hidden="true">↓</span></a></div>
+        <div class="stats-grid" aria-label="File measurement summary">
+          <div class="stat"><p>Total features</p><strong id="stat-total">0</strong><span>in this file</span></div><div class="stat"><p><i class="status-dot green"></i>Calculated</p><strong id="stat-calculated">0</strong><span>area or length</span></div><div class="stat"><p><i class="status-dot gray"></i>Not applicable</p><strong id="stat-not-applicable">0</strong><span>point features</span></div><div class="stat"><p><i class="status-dot amber"></i>Needs attention</p><strong id="stat-attention">0</strong><span id="attention-description">unsupported or invalid</span></div>
+        </div>
+        <div class="crs-strip"><p><span>SOURCE CRS</span><strong id="source-crs"></strong></p><span class="crs-arrow" aria-hidden="true">→</span><p><span>GEOMETRY OUTPUT</span><strong id="output-crs"></strong></p><span class="crs-arrow" aria-hidden="true">→</span><p><span>MEASUREMENTS</span><strong>Local projected CRS · metres / m²</strong></p><a href="#measurement-note">How to read this <span aria-hidden="true">↙</span></a></div>
+        <div class="panel feature-panel">
+          <div class="panel-heading"><h2>Features</h2><span id="table-count" class="small-mono"></span></div>
+          <div class="table-wrap" tabindex="0" role="region" aria-label="Feature measurements; scroll horizontally on small screens">
+            <table><thead><tr><th scope="col">Feature</th><th scope="col">Geometry</th><th scope="col" class="numeric">Area <span>m²</span></th><th scope="col" class="numeric">Length <span>m</span></th><th scope="col">Status</th><th scope="col"><span class="visually-hidden">Details</span></th></tr></thead><tbody id="features-body"></tbody></table>
+          </div>
+          <div class="pagination"><span id="pagination-label"></span><div><button id="previous-button" class="button button-small button-outline" type="button" disabled>← Previous</button><button id="next-button" class="button button-small button-outline" type="button" disabled>Next →</button></div></div>
+        </div>
+
+        <section id="feature-detail" class="panel detail-panel" aria-labelledby="detail-title" hidden>
+          <div class="panel-heading"><div><p class="eyebrow">FEATURE INSPECTOR</p><h2 id="detail-title" tabindex="-1"></h2></div><button id="close-detail" class="icon-button" type="button" aria-label="Close feature details">×</button></div>
+          <div class="detail-measurement"><span id="detail-status" class="pill"></span><p id="detail-explanation"></p></div>
+          <dl class="detail-facts"><div><dt>Feature ID</dt><dd id="detail-id"></dd></div><div><dt>Geometry type</dt><dd id="detail-type"></dd></div><div><dt>Measurement CRS</dt><dd id="detail-crs"></dd></div><div><dt>Geometry CRS</dt><dd id="detail-geometry-crs"></dd></div></dl>
+          <div class="detail-data"><div><h3>Original properties</h3><pre id="detail-properties" tabindex="0" aria-label="Feature properties JSON"></pre></div><div><h3>Geometry <span>GeoJSON</span></h3><pre id="detail-geometry" tabindex="0" aria-label="Feature geometry JSON"></pre></div></div>
+        </section>
+
+        <aside id="measurement-note" class="measurement-note"><span class="information-icon" aria-hidden="true">i</span><div><h3>Know what you are measuring</h3><p>Polygons return area in square metres; lines return length in metres. Points have no area or line length. Geometry coordinates are returned in WGS84 (longitude, latitude); calculations use a suitable local projected coordinate system, shown in each feature’s details. Invalid or unsupported features include a reason. Displayed values are rounded; the JSON export preserves the API values.</p></div></aside>
+      </section>
+      <footer class="site-footer"><span>GeoMeasure <span class="footer-separator">/</span> A little clarity for spatial data.</span><span>FastAPI <span class="footer-separator">·</span> REST API</span></footer>
+    </main>
+  </body>
+</html>

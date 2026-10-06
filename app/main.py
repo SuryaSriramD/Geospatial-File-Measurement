@@ -1,24 +1,36 @@
-"""REST endpoints. CPU-bound parsing/projection runs in FastAPI's worker pool."""
+"""REST endpoints and a same-origin browser interface for file processing."""
 
+import json
 import logging
+import re
 import sqlite3
+from collections.abc import Iterator
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from pathlib import PurePosixPath
+from pathlib import Path
 from typing import Annotated
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import FastAPI, File, HTTPException, Query, Response, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
 from app.config import Settings
-from app.measurements import measure_feature
+from app.jobs import JobCapacityError, JobManager
 from app.middleware import UploadBodyLimitMiddleware
-from app.parsers import ParseError, parse_file
+from app.parsers import ParseError
+from app.processing import (
+    UploadValidationError,
+    process_upload,
+    validate_content,
+    validate_filename,
+)
 from app.repository import Repository
-from app.schemas import FeatureResult, FileInfo, MeasurementPage, MeasurementSummary
+from app.schemas import FileInfo, JobStatus, MeasurementPage
 
 logger = logging.getLogger(__name__)
+STATIC_DIR = Path(__file__).parent / "static"
+EXAMPLE_FILE = Path(__file__).resolve().parent.parent / "examples" / "sample.kml"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -26,18 +38,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     repository = Repository(settings.data_dir)
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI):
+    async def lifespan(app: FastAPI):
         repository.initialize()
-        yield
+        app.state.jobs = JobManager(settings, repository)
+        try:
+            yield
+        finally:
+            await run_in_threadpool(app.state.jobs.shutdown)
 
     app = FastAPI(
         title="Geospatial File Measurement API",
-        version="1.0.0",
+        version="1.1.0",
         description="Upload KML or a zipped Shapefile and retrieve projected measurements in SI units.",
         lifespan=lifespan,
     )
     # Allow 64 KiB for multipart boundaries/headers in addition to the file.
     app.add_middleware(UploadBodyLimitMiddleware, max_body_bytes=settings.max_upload_bytes + 65536)
+    app.mount("/assets", StaticFiles(directory=STATIC_DIR, check_dir=False), name="assets")
 
     @app.exception_handler(sqlite3.Error)
     async def database_error(_request, exc: sqlite3.Error):
@@ -60,6 +77,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         return metadata
 
+    def read_upload(file: UploadFile) -> tuple[str, bytes]:
+        try:
+            filename = validate_filename(file.filename)
+            content = file.file.read(settings.max_upload_bytes + 1)
+            validate_content(content, settings)
+        except UploadValidationError as exc:
+            raise HTTPException(
+                exc.status_code, detail={"code": exc.code, "message": str(exc)}
+            ) from exc
+        finally:
+            file.file.close()
+        return filename, content
+
+    @app.get("/", include_in_schema=False)
+    def frontend() -> FileResponse:
+        return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})
+
+    @app.get("/api/config", tags=["Browser"])
+    def config() -> dict[str, int]:
+        return {
+            "max_upload_bytes": settings.max_upload_bytes,
+            "max_features": settings.max_features,
+        }
+
+    @app.get("/api/example-file", tags=["Browser"])
+    def example_file() -> FileResponse:
+        return FileResponse(
+            EXAMPLE_FILE,
+            media_type="application/vnd.google-earth.kml+xml",
+            filename="sample.kml",
+        )
+
     @app.get("/health", tags=["Health"])
     def health() -> dict[str, str]:
         return {"status": "ok"}
@@ -76,78 +125,91 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         },
     )
     def upload_file(response: Response, file: Annotated[UploadFile, File()]) -> FileInfo:
-        filename = PurePosixPath((file.filename or "").replace("\\", "/")).name
-        if not filename or len(filename) > 255 or any(ord(c) < 32 for c in filename):
-            raise HTTPException(
-                422, detail={"code": "invalid_filename", "message": "A valid filename is required."}
-            )
-        if PurePosixPath(filename).suffix.lower() not in {".kml", ".zip"}:
-            raise HTTPException(
-                415,
-                detail={
-                    "code": "unsupported_file_type",
-                    "message": "Upload a .kml file or a .zip containing a Shapefile.",
-                },
-            )
+        filename, content = read_upload(file)
         try:
-            content = file.file.read(settings.max_upload_bytes + 1)
-        finally:
-            file.file.close()
-        if len(content) > settings.max_upload_bytes:
-            raise HTTPException(
-                413,
-                detail={"code": "upload_too_large", "message": "File exceeds the upload limit."},
-            )
-        try:
-            dataset = parse_file(filename, content, max_features=settings.max_features)
+            metadata = process_upload(filename, content, settings, repository)
         except ParseError as exc:
             raise HTTPException(
                 422, detail={"code": "invalid_geospatial_file", "message": str(exc)}
             ) from exc
-
-        features = []
-        summary = MeasurementSummary()
-        for index, source in enumerate(dataset.features):
-            result = measure_feature(source.geometry, dataset.crs)
-            unsupported = source.unsupported_geometry
-            if unsupported:
-                reason = f"Unsupported input geometry: {unsupported}."
-                if source.geometry is not None:
-                    reason += " Returned geometry includes only supported components; no partial measurement was calculated."
-                result["measurement"].update(
-                    status="UNSUPPORTED",
-                    reason=reason,
-                    area_m2=None,
-                    length_m=None,
-                    crs=None,
-                )
-                if source.geometry is None:
-                    result["geometry_type"] = str(unsupported)
-            feature = FeatureResult(
-                feature_id=source.feature_id,
-                index=index,
-                properties=source.properties,
-                **result,
-            )
-            summary_key = feature.measurement.status.lower()
-            setattr(summary, summary_key, getattr(summary, summary_key) + 1)
-            features.append(feature)
-
-        metadata = FileInfo(
-            id=uuid4(),
-            filename=filename,
-            feature_count=len(features),
-            crs=dataset.crs.to_string(),
-            created_at=datetime.now(timezone.utc),
-            measurement_summary=summary,
-        )
-        repository.save(metadata, features)
         response.headers["Location"] = f"/api/files/{metadata.id}/"
         return metadata
+
+    @app.post(
+        "/api/jobs/",
+        status_code=202,
+        response_model=JobStatus,
+        tags=["Processing"],
+        responses={
+            413: {"description": "Upload too large"},
+            415: {"description": "Unsupported file extension"},
+            422: {"description": "Missing or invalid upload"},
+            429: {"description": "Processing queue is full"},
+        },
+        description=(
+            "Submit a file for background processing. Poll the Location URL for progress. "
+            "Jobs are process-local and temporary; completed file results persist in SQLite."
+        ),
+    )
+    def submit_job(response: Response, file: Annotated[UploadFile, File()]) -> JobStatus:
+        filename, content = read_upload(file)
+        try:
+            job = app.state.jobs.submit(filename, content)
+        except JobCapacityError as exc:
+            raise HTTPException(
+                429,
+                detail={"code": "processing_busy", "message": str(exc)},
+                headers={"Retry-After": "2"},
+            ) from exc
+        response.headers["Location"] = f"/api/jobs/{job.id}/"
+        response.headers["Cache-Control"] = "no-store"
+        return job
+
+    @app.get("/api/jobs/{job_id}/", response_model=JobStatus, tags=["Processing"])
+    def job_status(job_id: UUID, response: Response) -> JobStatus:
+        job = app.state.jobs.get(str(job_id))
+        if job is None:
+            raise HTTPException(
+                404,
+                detail={
+                    "code": "job_not_found",
+                    "message": "Job was not found. Job progress expires or resets with the server.",
+                },
+            )
+        response.headers["Cache-Control"] = "no-store"
+        return job
 
     @app.get("/api/files/{file_id}/", response_model=FileInfo, tags=["Files"])
     def file_info(file_id: UUID) -> dict:
         return find_file(file_id)
+
+    @app.get("/api/files/{file_id}/export/", tags=["Files"])
+    def export_file(file_id: UUID) -> StreamingResponse:
+        metadata = find_file(file_id)
+        stem = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(metadata["filename"]).stem)
+        filename = f"{stem.strip('._-')[:120] or 'geospatial'}-results.json"
+
+        def chunks() -> Iterator[str]:
+            yield '{"file":' + json.dumps(metadata, allow_nan=False)
+            yield ',"measurements":{"file_id":' + json.dumps(str(file_id))
+            yield ',"total":' + str(metadata["feature_count"]) + ',"items":['
+            first = True
+            for offset in range(0, metadata["feature_count"], 1000):
+                for feature in repository.get_features(str(file_id), 1000, offset):
+                    if not first:
+                        yield ","
+                    yield json.dumps(feature, allow_nan=False)
+                    first = False
+            yield "]}}"
+
+        return StreamingResponse(
+            chunks(),
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Cache-Control": "no-store",
+            },
+        )
 
     @app.get(
         "/api/files/{file_id}/measurements/", response_model=MeasurementPage, tags=["Measurements"]

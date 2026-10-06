@@ -1,22 +1,66 @@
 # Geospatial File Measurement API
 
-A FastAPI REST service that accepts KML or a zipped Shapefile, preserves feature
-attributes, and calculates polygon areas and line lengths in a local projected
-CRS. SQLite keeps processed results available after a restart.
+A single-page geospatial workspace backed by FastAPI REST APIs. Upload KML or a
+zipped Shapefile, follow its real processing stages, and inspect polygon areas,
+line lengths, attributes, and geometries in the same page. SQLite keeps completed
+results available after a restart.
 
 Repository: [SuryaSriramD/Geospatial-File-Measurement](https://github.com/SuryaSriramD/Geospatial-File-Measurement).
 
-## Run locally
+## Open the app
 
 Use **Python 3.12+**. The pinned dependencies and tests were verified with Python
 3.12. No separate database server or GDAL installation is required.
 
-Clone the repository, then set up the environment (skip the first two commands
-if you already have this project open):
+Download and unzip this repository, or clone it. Then:
+
+- **macOS:** double-click `Start.command`.
+- **Windows:** double-click `Start.bat`.
+- **Any platform:** run `python3.12 start.py` (or `python start.py` with Python 3.12+).
+
+The launcher creates the local environment, installs dependencies on the first
+run, starts FastAPI, and opens the page in your browser. **Internet is needed for
+the first dependency installation.** Later launches reuse the environment; a
+change to the requirements triggers an update. No Node.js installation, frontend
+build, second server, or switching between frontend/backend folders is needed.
+
+The page normally opens at **http://127.0.0.1:8000/**. If that port is occupied,
+the launcher selects the next available port and prints the actual URL. Keep its
+terminal window open while using the app; press Ctrl+C there to stop it.
 
 ```bash
 git clone https://github.com/SuryaSriramD/Geospatial-File-Measurement.git
 cd Geospatial-File-Measurement
+python3.12 start.py
+```
+
+For an existing clone, run `git pull` before starting. `python3.12 start.py
+--no-browser --port 8080` starts with a different preferred port and leaves the
+browser closed. You can also invoke `start.py` by its absolute path from another
+directory; it resolves project files relative to itself.
+
+### Using the page
+
+1. Choose or drop a `.kml` or `.zip`, then select **Process file**. Use **Try
+   sample** to process the included sample KML without choosing a file.
+2. Follow **Validate file → Read features → Project & measure → Save results**.
+   These states come from the backend; small files may finish between polls.
+3. Inspect the whole-file summary and the paginated feature table. Open a feature
+   to see its properties, geometry, measurement CRS, and any reason it could not
+   be measured.
+4. Download the complete results as JSON. The page also lets you reopen the last
+   completed result in this browser while its database record still exists.
+
+The app is local software, not a GitHub Pages deployment. FastAPI must be running
+to process uploads. The frontend assets themselves have no external CDN or map
+tile dependencies.
+
+### Manual development setup
+
+If you prefer to manage the Python environment yourself, run these commands from
+the project directory:
+
+```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
@@ -32,12 +76,40 @@ development. Browse [Swagger UI](http://127.0.0.1:8000/docs),
 
 | Method | Endpoint | Successful response |
 |---|---|---|
+| `GET` | `/` | Single-page upload, pipeline, and results interface |
+| `POST` | `/api/jobs/` | `202 Accepted`: submit processing and receive a job ID |
+| `GET` | `/api/jobs/{id}/` | `200 OK`: actual processing stages, counts, and result ID |
 | `POST` | `/api/files/` | `201 Created`: processed file metadata; `Location` header |
 | `GET` | `/api/files/{id}/` | `200 OK`: stored metadata |
 | `GET` | `/api/files/{id}/measurements/` | `200 OK`: paginated features and measurements |
+| `GET` | `/api/files/{id}/export/` | Complete results as a JSON attachment |
 | `GET` | `/health` | `200 OK`: process health |
+| `GET` | `/api/config` | Upload-size and feature limits for the page |
+| `GET` | `/api/example-file` | Included sample KML |
 
 `/health` is a liveness check; it does not verify database availability.
+
+### Live processing used by the page
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/jobs/ -F 'file=@examples/sample.kml'
+# Copy the returned job id:
+curl http://127.0.0.1:8000/api/jobs/YOUR_JOB_ID/
+```
+
+Job responses contain `id`, `filename`, `status`, `created_at`, `updated_at`,
+`processed`, `total`, `steps`, `file_id`, and `error`. Job states are `QUEUED`,
+`PROCESSING`, `COMPLETED`, and `FAILED`. Each of the four steps has `key`, `label`,
+`status`, `duration_ms`, and `detail`; a step is `PENDING`, `RUNNING`, `COMPLETED`,
+or `FAILED`. A successful job's `file_id` identifies the normal file/measurement
+resources below. `error` includes a code and message if processing fails.
+
+Two worker threads process jobs, with at most eight unfinished jobs accepted at
+once. Excess submissions return `429`. Jobs run within one server process and
+their progress is kept in memory; only the most recent completed jobs are retained.
+Restarting the server clears job progress, but completed file results remain in
+SQLite. Run this local mode with **one Uvicorn worker**. It is not a durable task
+queue; use a persistent broker and workers before scaling across processes.
 
 ### Upload
 
@@ -84,6 +156,11 @@ curl "http://127.0.0.1:8000/api/files/$FILE_ID/measurements/?limit=100&offset=0"
 `limit` defaults to 100 and permits 1–1000. `offset` defaults to 0 and must be
 nonnegative. Results are ordered by the zero-based feature `index`. The response
 envelope contains `file_id`, `total`, `limit`, `offset`, and `items`.
+
+For a complete export, use `GET /api/files/{id}/export/`. It returns an attachment
+with `{ "file": { ...metadata }, "measurements": { "file_id": "...", "total": N,
+"items": [ ...all features ] } }`. The server streams features in batches rather
+than requiring you to collect paginated responses manually.
 
 Each item contains:
 
@@ -147,27 +224,37 @@ Their IDs illustrate a previous test run; upload the sample to obtain a usable I
 
 | HTTP status | Meaning |
 |---|---|
-| `404` | No uploaded file with this UUID |
+| `404` | No file with this UUID, or job progress has expired/reset |
 | `413` | File or entire request exceeds the size limit |
 | `415` | Filename extension is neither `.zip` nor `.kml` |
 | `422` | Invalid file, missing CRS/components, unsafe archive/XML, or invalid parameters |
+| `429` | The background processing queue is full; retry after a current job finishes |
 | `503` | SQLite is unavailable |
 
 Application errors use `{"detail": {"code": "...", "message": "..."}}`.
 FastAPI's request validation errors use its standard `detail` list. Failed uploads
 create no file record. Uploading identical bytes again creates a new resource.
+For an accepted background job, polling still returns `200` when processing
+fails: inspect `status: FAILED` and `error`. Parsing/storage failures therefore
+appear inside the job response rather than as polling HTTP `422`/`503` responses.
 
 ## Architecture
 
 ```text
 app/
-  main.py          REST routes and processing orchestration
+  main.py          REST routes and frontend serving
+  processing.py    Shared file-processing pipeline and real stage callbacks
+  jobs.py          Bounded background workers and thread-safe job snapshots
   config.py        Environment-backed settings
   middleware.py    Request byte limit before multipart parsing
   parsers.py       Safe ZIP/Shapefile and KML readers
   measurements.py  Geometry validation and CRS-aware measurements
   repository.py    Atomic SQLite persistence and pagination
   schemas.py       Typed response models and OpenAPI contracts
+  static/          Single-page HTML, CSS, and JavaScript
+start.py           Environment setup, server startup, and browser opening
+Start.command      macOS double-click launcher
+Start.bat          Windows double-click launcher
 tests/             Parser, numerical, and REST integration checks
 examples/          Sample KML and generated response examples
 ```
@@ -178,13 +265,14 @@ Processing flow:
 2. Parse features, attributes, and source CRS with feature/coordinate limits.
 3. Validate each geometry, convert it to WGS84 XY, and select a metric projection.
 4. Calculate the supported measurement or record a per-feature reason.
-5. Atomically save file metadata and all features to SQLite, then return `201`.
+5. Atomically save file metadata and all features to SQLite.
 6. Serve later metadata and paginated feature reads from SQLite.
 
-Parsing and projection run in synchronous FastAPI endpoints, which execute in a
-worker thread pool. The upload remains synchronous: it returns after processing
-and persistence, without an asynchronous job lifecycle. SQLite uses WAL and a
-separate connection per operation. Database writes are parameterized and atomic.
+The page submits a background job and polls its actual stage and feature counts.
+The original `POST /api/files/` remains synchronous and returns `201` after the
+same processing pipeline finishes. Both paths share parsing, projection, and
+persistence code. SQLite uses WAL and a separate connection per operation.
+Database writes are parameterized and atomic.
 
 ### CRS and measurement strategy
 
@@ -244,9 +332,14 @@ geographic and projected input, polygon holes, multipart features, axis order,
 polar and southern projections, invalid/unsupported geometry, malicious inputs,
 HTTP errors, chunked body limits, pagination, and persistence after restart.
 
-Verified locally: **87 tests passed**, Ruff lint/format checks passed, dependency
-compatibility passed, and real Uvicorn HTTP checks passed for upload, metadata,
-measurements, health, Swagger UI, and OpenAPI.
+Validation includes the original measurement tests plus job lifecycle, failure,
+queue bounds, frontend routes, and launcher checks. Browser testing exercises the
+sample upload, pipeline, feature detail, pagination, and error states.
+
+Verified: **111 tests passed**, Ruff lint/format and JavaScript syntax checks
+passed. The macOS launcher was also run from a different working directory through
+first-time setup and repeated startup. The Windows wrapper is included; its native
+launch behavior has not been tested on Windows.
 
 The installed Starlette version emits a deprecation warning when its TestClient
 uses HTTPX. It does not affect the passing tests or production endpoints.
@@ -263,9 +356,11 @@ uses HTTPX. It does not affect the passing tests or production endpoints.
   measurement projection.
 - **SQLite:** simple persistent local setup. PostgreSQL/PostGIS and object storage
   are better choices for spatial queries, larger datasets, and several servers.
-- **Synchronous bounded uploads:** straightforward failure handling and atomic
-  completion. A durable queue with separate workers is the next step for large
-  or slow inputs; background tasks alone would not provide durable job recovery.
+- **One application:** FastAPI serves the page and its APIs together. Plain HTML,
+  CSS, and JavaScript keep setup small and remove a frontend build/server step.
+- **Shared processing with bounded jobs:** the synchronous upload API remains
+  available; the page uses a small background queue to show truthful progress.
+  A durable queue with separate workers is the next step for large or slow inputs.
 - **Explicit projection limits:** a documented local strategy is easier to verify.
   Geodesic measurement or tiled/equal-area approaches would support wider regions,
   but require additional policies and tests.
